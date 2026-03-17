@@ -1,0 +1,1028 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Queue Demand Forecast Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1" integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <style>
+        :root {
+            --bg-primary: #0f172a;
+            --bg-card: #1e293b;
+            --bg-card-hover: #334155;
+            --bg-input: #0f172a;
+            --border: #334155;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --cyan: #22d3ee;
+            --cyan-dim: rgba(34,211,238,0.15);
+            --emerald: #34d399;
+            --emerald-dim: rgba(52,211,153,0.15);
+            --amber: #fbbf24;
+            --amber-dim: rgba(251,191,36,0.15);
+            --rose: #fb7185;
+            --rose-dim: rgba(251,113,133,0.15);
+            --violet: #a78bfa;
+            --gap: 16px;
+            --radius: 10px;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.5;
+            min-height: 100vh;
+        }
+
+        .container { max-width: 1320px; margin: 0 auto; padding: 24px; }
+
+        /* Header */
+        .header {
+            display: flex; justify-content: space-between; align-items: flex-start;
+            margin-bottom: 24px; flex-wrap: wrap; gap: 16px;
+        }
+        .header-left h1 {
+            font-size: 26px; font-weight: 700; color: var(--cyan);
+            letter-spacing: -0.5px;
+        }
+        .header-left p { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+        .sanitized-badge {
+            display: inline-flex; align-items: center; gap: 6px;
+            background: rgba(251,191,36,0.12); border: 1px solid rgba(251,191,36,0.3);
+            color: var(--amber); font-size: 11px; font-weight: 600;
+            padding: 4px 10px; border-radius: 20px; text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .header-right { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+        /* Controls */
+        .control-group { display: flex; align-items: center; gap: 6px; }
+        .control-group label { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+        .control-group input, .control-group select {
+            background: var(--bg-input); border: 1px solid var(--border);
+            color: var(--text-primary); border-radius: 6px; padding: 6px 10px;
+            font-size: 13px; outline: none;
+        }
+        .control-group input:focus, .control-group select:focus {
+            border-color: var(--cyan);
+        }
+
+        /* Upload Zone */
+        .upload-zone {
+            border: 2px dashed var(--border); border-radius: var(--radius);
+            padding: 60px 40px; text-align: center; margin-bottom: 24px;
+            transition: all 0.2s; cursor: pointer; background: var(--bg-card);
+        }
+        .upload-zone:hover, .upload-zone.drag-over {
+            border-color: var(--cyan); background: var(--cyan-dim);
+        }
+        .upload-zone h2 { font-size: 20px; color: var(--text-primary); margin-bottom: 8px; }
+        .upload-zone p { font-size: 14px; color: var(--text-muted); }
+        .upload-zone .format-hint {
+            font-size: 12px; color: var(--text-muted); margin-top: 16px;
+            background: var(--bg-primary); display: inline-block;
+            padding: 8px 16px; border-radius: 6px; font-family: 'SF Mono', 'Fira Code', monospace;
+        }
+        .upload-zone input[type="file"] { display: none; }
+        .upload-btn {
+            display: inline-block; margin-top: 16px; padding: 10px 24px;
+            background: var(--cyan); color: var(--bg-primary); border: none;
+            border-radius: 6px; font-weight: 600; font-size: 14px; cursor: pointer;
+        }
+        .upload-btn:hover { filter: brightness(1.1); }
+
+        /* Tabs */
+        .tab-bar {
+            display: flex; gap: 4px; margin-bottom: 20px;
+            background: var(--bg-card); border-radius: 8px; padding: 4px;
+            width: fit-content;
+        }
+        .tab-btn {
+            padding: 8px 20px; border-radius: 6px; border: none;
+            background: transparent; color: var(--text-muted);
+            font-size: 13px; font-weight: 600; cursor: pointer;
+            transition: all 0.15s;
+        }
+        .tab-btn:hover { color: var(--text-primary); background: var(--bg-card-hover); }
+        .tab-btn.active { background: var(--cyan); color: var(--bg-primary); }
+
+        /* KPI Row */
+        .kpi-row {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: var(--gap); margin-bottom: 24px;
+        }
+        .kpi-card {
+            background: var(--bg-card); border-radius: var(--radius);
+            padding: 20px 24px; border: 1px solid var(--border);
+            transition: border-color 0.15s;
+        }
+        .kpi-card:hover { border-color: var(--text-muted); }
+        .kpi-label {
+            font-size: 12px; color: var(--text-muted); text-transform: uppercase;
+            letter-spacing: 0.5px; margin-bottom: 6px;
+        }
+        .kpi-value { font-size: 28px; font-weight: 700; margin-bottom: 4px; }
+        .kpi-sub { font-size: 12px; color: var(--text-muted); }
+        .kpi-value.cyan { color: var(--cyan); }
+        .kpi-value.emerald { color: var(--emerald); }
+        .kpi-value.amber { color: var(--amber); }
+        .kpi-value.rose { color: var(--rose); }
+
+        /* Chart Panels */
+        .chart-panel {
+            background: var(--bg-card); border-radius: var(--radius);
+            padding: 24px; border: 1px solid var(--border); margin-bottom: 20px;
+        }
+        .chart-panel h3 {
+            font-size: 15px; font-weight: 600; margin-bottom: 16px;
+            color: var(--text-primary);
+        }
+        .chart-wrap { position: relative; height: 360px; }
+        .chart-wrap-sm { position: relative; height: 280px; }
+
+        /* Insight Box */
+        .insight-box {
+            margin-top: 16px; padding: 14px 18px; border-radius: 8px;
+            font-size: 13px; line-height: 1.6;
+        }
+        .insight-box.warn {
+            background: var(--amber-dim); border-left: 3px solid var(--amber);
+            color: var(--amber);
+        }
+        .insight-box.info {
+            background: var(--cyan-dim); border-left: 3px solid var(--cyan);
+            color: var(--cyan);
+        }
+
+        /* Grid layouts */
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap); }
+
+        /* Table */
+        .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .data-table thead th {
+            text-align: left; padding: 10px 12px; border-bottom: 2px solid var(--border);
+            color: var(--text-muted); font-weight: 600; font-size: 11px;
+            text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer;
+            user-select: none; white-space: nowrap;
+        }
+        .data-table thead th:hover { color: var(--text-primary); }
+        .data-table tbody td {
+            padding: 10px 12px; border-bottom: 1px solid rgba(51,65,85,0.5);
+        }
+        .data-table tbody tr:hover { background: rgba(34,211,238,0.04); }
+
+        /* Footer */
+        .footer {
+            margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border);
+            font-size: 11px; color: var(--text-muted); display: flex;
+            justify-content: space-between; flex-wrap: wrap; gap: 8px;
+        }
+
+        /* Hidden sections */
+        .hidden { display: none !important; }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .grid-2 { grid-template-columns: 1fr; }
+            .header { flex-direction: column; }
+            .kpi-row { grid-template-columns: repeat(2, 1fr); }
+        }
+
+        @media print {
+            body { background: white; color: #1a1a1a; }
+            .upload-zone, .tab-bar, .header-right { display: none; }
+            .chart-panel, .kpi-card { border: 1px solid #ddd; box-shadow: none; background: white; }
+        }
+
+        /* Loading animation */
+        .loading { text-align: center; padding: 40px; color: var(--text-muted); }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+        .loading span { animation: pulse 1.5s infinite; }
+    </style>
+</head>
+<body>
+<div class="container">
+
+    <!-- HEADER -->
+    <div class="header">
+        <div class="header-left">
+            <h1>Queue Demand Forecast</h1>
+            <p id="subtitle">Upload a daily table CSV to generate forecast</p>
+        </div>
+        <div class="header-right">
+            <span class="sanitized-badge">&#x1f512; Proportions Only</span>
+            <div class="control-group">
+                <label for="horizon">Horizon</label>
+                <input type="number" id="horizon" value="30" min="7" max="90" style="width:60px">
+            </div>
+            <div class="control-group">
+                <label for="alpha">&#x3b1;</label>
+                <input type="number" id="alpha" value="0.2" min="0" max="1" step="0.05" style="width:60px">
+            </div>
+            <div class="control-group">
+                <label for="beta">&#x3b2;</label>
+                <input type="number" id="beta" value="0.1" min="0" max="1" step="0.05" style="width:60px">
+            </div>
+            <div class="control-group">
+                <label for="gamma">&#x3b3;</label>
+                <input type="number" id="gamma" value="0.2" min="0" max="1" step="0.05" style="width:60px">
+            </div>
+            <button onclick="rerunForecast()" class="upload-btn" style="margin:0; padding:6px 14px; font-size:12px;" id="rerunBtn" class="hidden">Re-run</button>
+        </div>
+    </div>
+
+    <!-- UPLOAD ZONE -->
+    <div class="upload-zone" id="uploadZone">
+        <h2>Drop your daily_table CSV here</h2>
+        <p>Or click to browse. The forecast engine runs entirely in your browser â no data leaves this machine.</p>
+        <div class="format-hint">date, A_t, C_t, E_t, B_t [, vertical, issue_tag]</div>
+        <button class="upload-btn" onclick="document.getElementById('fileInput').click()">Choose File</button>
+        <input type="file" id="fileInput" accept=".csv,.tsv,.txt">
+        <p style="margin-top:16px; font-size:12px; color:var(--text-muted);">
+            Optional columns: <code>vertical</code> (for breakdown) and <code>issue_tag</code>.
+            If absent, vertical/issue views will use proportional estimates.
+        </p>
+    </div>
+
+    <!-- DASHBOARD (hidden until data loaded) -->
+    <div id="dashboard" class="hidden">
+
+        <!-- KPIs -->
+        <div class="kpi-row">
+            <div class="kpi-card">
+                <div class="kpi-label">Arrival Index</div>
+                <div class="kpi-value cyan" id="kpi-arrivals">â</div>
+                <div class="kpi-sub" id="kpi-arrivals-sub"></div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Closure Index</div>
+                <div class="kpi-value emerald" id="kpi-closures">â</div>
+                <div class="kpi-sub" id="kpi-closures-sub"></div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Backlog Trend</div>
+                <div class="kpi-value amber" id="kpi-backlog">â</div>
+                <div class="kpi-sub" id="kpi-backlog-sub"></div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Escalation Rate</div>
+                <div class="kpi-value rose" id="kpi-esc">â</div>
+                <div class="kpi-sub" id="kpi-esc-sub"></div>
+            </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="tab-bar">
+            <button class="tab-btn active" onclick="switchTab('forecast', this)">Forecast</button>
+            <button class="tab-btn" onclick="switchTab('verticals', this)">Verticals</button>
+            <button class="tab-btn" onclick="switchTab('seasonality', this)">Seasonality</button>
+            <button class="tab-btn" onclick="switchTab('table', this)">Data Table</button>
+        </div>
+
+        <!-- TAB: Forecast -->
+        <div id="tab-forecast">
+            <div class="chart-panel">
+                <h3>Arrivals vs. Closures â Indexed Forecast</h3>
+                <div class="chart-wrap"><canvas id="forecastChart"></canvas></div>
+                <div class="insight-box warn" id="forecastInsight"></div>
+            </div>
+            <div class="chart-panel">
+                <h3>Backlog Trajectory â Indexed</h3>
+                <div class="chart-wrap-sm"><canvas id="backlogChart"></canvas></div>
+            </div>
+        </div>
+
+        <!-- TAB: Verticals -->
+        <div id="tab-verticals" class="hidden">
+            <div class="grid-2">
+                <div class="chart-panel">
+                    <h3>Share of Arrivals by Vertical</h3>
+                    <div class="chart-wrap"><canvas id="verticalPieChart"></canvas></div>
+                </div>
+                <div class="chart-panel">
+                    <h3>Forecasted Share Allocation</h3>
+                    <div class="chart-wrap"><canvas id="verticalBarChart"></canvas></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB: Seasonality -->
+        <div id="tab-seasonality" class="hidden">
+            <div class="grid-2">
+                <div class="chart-panel">
+                    <h3>Day-of-Week Demand Pattern (Indexed)</h3>
+                    <div class="chart-wrap"><canvas id="seasonChart"></canvas></div>
+                    <div class="insight-box info" id="seasonInsight"></div>
+                </div>
+                <div class="chart-panel">
+                    <h3>Closure Efficiency by Day</h3>
+                    <div class="chart-wrap"><canvas id="closureSeasonChart"></canvas></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB: Data Table -->
+        <div id="tab-table" class="hidden">
+            <div class="chart-panel">
+                <h3>Forecast Detail â Proportional Values</h3>
+                <div id="tableContainer"></div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <span id="modelInfo"></span>
+            <span id="trainingInfo"></span>
+            <span>Proportions-only mode â absolute values sanitized</span>
+        </div>
+    </div>
+
+</div>
+
+<script>
+// ========================================================================
+// HOLT-WINTERS ADDITIVE SEASONAL FORECASTING (ported from queue_forecast.py)
+// ========================================================================
+class HoltWinters {
+    constructor(alpha = 0.2, beta = 0.1, gamma = 0.2, m = 7) {
+        this.alpha = alpha;
+        this.beta = beta;
+        this.gamma = gamma;
+        this.m = m;
+    }
+
+    fitForecast(y, horizon) {
+        const n = y.length;
+        if (n < 2 * this.m) {
+            const mean = y.reduce((a, b) => a + b, 0) / n;
+            return Array(horizon).fill(Math.max(0, mean));
+        }
+
+        // Initialize level, trend, seasonal
+        const firstSeasonMean = y.slice(0, this.m).reduce((a, b) => a + b, 0) / this.m;
+        const secondSeasonMean = y.slice(this.m, 2 * this.m).reduce((a, b) => a + b, 0) / this.m;
+
+        const l = [firstSeasonMean];
+        const b = [(secondSeasonMean - firstSeasonMean) / this.m];
+        const s = y.slice(0, this.m).map(v => v - l[0]);
+
+        // Fit
+        for (let t = 1; t < n; t++) {
+            const sTm = t <= this.m ? s[t - 1] : s[t - this.m];
+            const lT = this.alpha * (y[t] - sTm) + (1 - this.alpha) * (l[t - 1] + b[t - 1]);
+            l.push(lT);
+            const bT = this.beta * (l[t] - l[t - 1]) + (1 - this.beta) * b[t - 1];
+            b.push(bT);
+            const sT = this.gamma * (y[t] - l[t]) + (1 - this.gamma) * sTm;
+            s.push(sT);
+        }
+
+        // Forecast
+        const forecasts = [];
+        for (let h = 1; h <= horizon; h++) {
+            const idx = Math.max(0, Math.min(s.length - this.m + ((h - 1) % this.m), s.length - 1));
+            const sF = s[idx];
+            forecasts.push(Math.max(0, l[n - 1] + h * b[n - 1] + sF));
+        }
+        return forecasts;
+    }
+}
+
+// Beta-Binomial Smoother for escalation rate
+class BetaBinomialSmoother {
+    constructor(lambdaDecay = 0.1) {
+        this.lambdaDecay = lambdaDecay;
+        this.a = 1.0;
+        this.b = 1.0;
+    }
+    update(successes, trials) {
+        this.a = this.lambdaDecay * successes + (1 - this.lambdaDecay) * this.a;
+        this.b = this.lambdaDecay * Math.max(0, trials - successes) + (1 - this.lambdaDecay) * this.b;
+    }
+    get rate() { return this.a / (this.a + this.b); }
+}
+
+// ========================================================================
+// DASHBOARD STATE
+// ========================================================================
+let STATE = {
+    rawDaily: [],
+    forecast: [],
+    verticalShares: {},
+    escalationRate: 0,
+    seasonality: { arrivals: [], closures: [] },
+    charts: {},
+    scaleFactor: 1 // used for sanitization
+};
+
+const COLORS = {
+    verticals: ['#22d3ee', '#34d399', '#a78bfa', '#fb7185', '#fbbf24', '#f97316', '#818cf8', '#2dd4bf']
+};
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+// ========================================================================
+// FILE UPLOAD
+// ========================================================================
+const uploadZone = document.getElementById('uploadZone');
+const fileInput = document.getElementById('fileInput');
+
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+uploadZone.addEventListener('drop', e => {
+    e.preventDefault(); uploadZone.classList.remove('drag-over');
+    if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', e => { if (e.target.files.length) handleFile(e.target.files[0]); });
+
+function handleFile(file) {
+    Papa.parse(file, {
+        header: true,
+        dynamicTyping: true,
+        skipEmptyLines: true,
+        complete: result => {
+            try {
+                processData(result.data);
+            } catch (err) {
+                alert('Error processing CSV: ' + err.message + '\n\nExpected columns: date, A_t, C_t, E_t, B_t');
+            }
+        },
+        error: err => alert('Parse error: ' + err.message)
+    });
+}
+
+function processData(rows) {
+    // Normalize column names (case-insensitive, trim)
+    const normalized = rows.map(row => {
+        const out = {};
+        for (const [k, v] of Object.entries(row)) {
+            out[k.trim().toLowerCase()] = v;
+        }
+        return out;
+    });
+
+    // Validate required columns
+    const required = ['date', 'a_t', 'c_t', 'e_t', 'b_t'];
+    const cols = Object.keys(normalized[0] || {});
+    for (const r of required) {
+        if (!cols.includes(r)) throw new Error(`Missing column: ${r} (found: ${cols.join(', ')})`);
+    }
+
+    STATE.rawDaily = normalized.map(r => ({
+        date: new Date(r.date),
+        A_t: +r.a_t || 0,
+        C_t: +r.c_t || 0,
+        E_t: +r.e_t || 0,
+        B_t: +r.b_t || 0,
+        vertical: r.vertical || r.account_type || null,
+        issue: r.issue_tag || r.issue || null
+    })).filter(r => !isNaN(r.date.getTime())).sort((a, b) => a.date - b.date);
+
+    if (STATE.rawDaily.length < 14) throw new Error('Need at least 14 days of data (got ' + STATE.rawDaily.length + ')');
+
+    // Compute scale factor for sanitization (normalize so max daily arrival = 100)
+    const maxA = Math.max(...STATE.rawDaily.map(r => r.A_t), 1);
+    STATE.scaleFactor = 100 / maxA;
+
+    runForecast();
+}
+
+function rerunForecast() {
+    if (STATE.rawDaily.length === 0) return;
+    runForecast();
+}
+
+function runForecast() {
+    const alpha = parseFloat(document.getElementById('alpha').value) || 0.2;
+    const beta = parseFloat(document.getElementById('beta').value) || 0.1;
+    const gamma = parseFloat(document.getElementById('gamma').value) || 0.2;
+    const horizon = parseInt(document.getElementById('horizon').value) || 30;
+
+    const hw = new HoltWinters(alpha, beta, gamma, 7);
+    const daily = STATE.rawDaily;
+
+    const arrValues = daily.map(r => r.A_t);
+    const clsValues = daily.map(r => r.C_t);
+
+    const arrForecast = hw.fitForecast(arrValues, horizon);
+    const clsForecast = hw.fitForecast(clsValues, horizon);
+
+    // Escalation rate
+    const smoother = new BetaBinomialSmoother(0.1);
+    daily.forEach(r => smoother.update(r.E_t, r.A_t));
+    STATE.escalationRate = smoother.rate;
+
+    const escForecast = arrForecast.map(a => a * STATE.escalationRate);
+
+    // Backlog projection
+    let backlog = daily[daily.length - 1].B_t;
+    const backlogForecast = [];
+    for (let i = 0; i < horizon; i++) {
+        backlog = Math.max(0, backlog + arrForecast[i] - clsForecast[i]);
+        backlogForecast.push(backlog);
+    }
+
+    // Build forecast array
+    const lastDate = daily[daily.length - 1].date;
+    STATE.forecast = [];
+    for (let i = 0; i < horizon; i++) {
+        const d = new Date(lastDate);
+        d.setDate(d.getDate() + i + 1);
+        STATE.forecast.push({
+            date: d,
+            A_hat: arrForecast[i],
+            C_hat: clsForecast[i],
+            E_hat: escForecast[i],
+            B_hat: backlogForecast[i]
+        });
+    }
+
+    // Vertical shares
+    computeVerticalShares();
+
+    // Seasonality
+    computeSeasonality();
+
+    // Show dashboard
+    document.getElementById('uploadZone').classList.add('hidden');
+    document.getElementById('dashboard').classList.remove('hidden');
+
+    renderAll();
+}
+
+function computeVerticalShares() {
+    const daily = STATE.rawDaily;
+    const hasVertical = daily.some(r => r.vertical !== null && r.vertical !== '');
+    STATE.verticalShares = {};
+
+    if (hasVertical) {
+        // Use last 28 days
+        const window = daily.slice(-28);
+        const totalA = window.reduce((s, r) => s + r.A_t, 0) || 1;
+        const counts = {};
+        window.forEach(r => {
+            if (r.vertical) counts[r.vertical] = (counts[r.vertical] || 0) + r.A_t;
+        });
+        for (const [k, v] of Object.entries(counts)) {
+            STATE.verticalShares[k] = v / totalA;
+        }
+    } else {
+        // Placeholder shares from the JSX data as proxy
+        STATE.verticalShares = {
+            'Reseller': 0.678, 'Fixed': 0.107, 'Starshield': 0.058,
+            'Civil Gov': 0.018, 'Aviation': 0.017, 'Maritime': 0.014,
+            'Backhaul': 0.018, 'Other': 0.090
+        };
+    }
+}
+
+function computeSeasonality() {
+    const daily = STATE.rawDaily;
+    const arrByDay = Array(7).fill(null).map(() => []);
+    const clsByDay = Array(7).fill(null).map(() => []);
+
+    daily.forEach(r => {
+        const dow = r.date.getDay();
+        arrByDay[dow].push(r.A_t);
+        clsByDay[dow].push(r.C_t);
+    });
+
+    const totalMeanArr = daily.reduce((s, r) => s + r.A_t, 0) / daily.length || 1;
+    const totalMeanCls = daily.reduce((s, r) => s + r.C_t, 0) / daily.length || 1;
+
+    STATE.seasonality.arrivals = arrByDay.map(arr =>
+        arr.length > 0 ? (arr.reduce((a, b) => a + b, 0) / arr.length) / totalMeanArr * 100 : 0
+    );
+    STATE.seasonality.closures = clsByDay.map(arr =>
+        arr.length > 0 ? (arr.reduce((a, b) => a + b, 0) / arr.length) / totalMeanCls * 100 : 0
+    );
+}
+
+// ========================================================================
+// SANITIZATION HELPERS â show proportions/indices, not raw counts
+// ========================================================================
+function idx(val, baseline) {
+    if (!baseline || baseline === 0) return 0;
+    return (val / baseline) * 100;
+}
+
+// ========================================================================
+// RENDERING
+// ========================================================================
+function renderAll() {
+    renderKPIs();
+    renderForecastChart();
+    renderBacklogChart();
+    renderVerticalCharts();
+    renderSeasonalityCharts();
+    renderTable();
+    updateMeta();
+}
+
+function renderKPIs() {
+    const daily = STATE.rawDaily;
+    const fc = STATE.forecast;
+    const totalArrFc = fc.reduce((s, r) => s + r.A_hat, 0);
+    const totalClsFc = fc.reduce((s, r) => s + r.C_hat, 0);
+    const avgArrHist = daily.reduce((s, r) => s + r.A_t, 0) / daily.length;
+    const avgClsHist = daily.reduce((s, r) => s + r.C_t, 0) / daily.length;
+    const avgArrFc = totalArrFc / fc.length;
+    const avgClsFc = totalClsFc / fc.length;
+
+    // Arrival index: forecast avg vs historic avg
+    const arrIdx = idx(avgArrFc, avgArrHist);
+    document.getElementById('kpi-arrivals').textContent = arrIdx.toFixed(1);
+    document.getElementById('kpi-arrivals-sub').textContent =
+        arrIdx >= 100 ? `${(arrIdx - 100).toFixed(1)}% above baseline` : `${(100 - arrIdx).toFixed(1)}% below baseline`;
+
+    // Closure index
+    const clsIdx = idx(avgClsFc, avgClsHist);
+    document.getElementById('kpi-closures').textContent = clsIdx.toFixed(1);
+    document.getElementById('kpi-closures-sub').textContent =
+        clsIdx >= 100 ? `${(clsIdx - 100).toFixed(1)}% above baseline` : `${(100 - clsIdx).toFixed(1)}% below baseline`;
+
+    // Backlog trend
+    const startB = daily[daily.length - 1].B_t;
+    const endB = fc[fc.length - 1].B_hat;
+    const backlogPct = ((endB - startB) / (startB || 1)) * 100;
+    document.getElementById('kpi-backlog').textContent =
+        (backlogPct >= 0 ? '+' : '') + backlogPct.toFixed(1) + '%';
+    document.getElementById('kpi-backlog-sub').textContent =
+        backlogPct > 0 ? 'Growing â capacity deficit' : 'Shrinking â throughput surplus';
+
+    // Escalation rate
+    document.getElementById('kpi-esc').textContent = (STATE.escalationRate * 100).toFixed(2) + '%';
+    document.getElementById('kpi-esc-sub').textContent = 'Beta-Binomial smoothed';
+}
+
+function renderForecastChart() {
+    const fc = STATE.forecast;
+    const daily = STATE.rawDaily;
+    const avgA = daily.reduce((s, r) => s + r.A_t, 0) / daily.length || 1;
+    const avgC = daily.reduce((s, r) => s + r.C_t, 0) / daily.length || 1;
+
+    const labels = fc.map(r => formatDate(r.date));
+    const arrIndexed = fc.map(r => idx(r.A_hat, avgA));
+    const clsIndexed = fc.map(r => idx(r.C_hat, avgC));
+
+    destroyChart('forecastChart');
+    STATE.charts.forecastChart = new Chart(document.getElementById('forecastChart'), {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [
+                {
+                    label: 'Arrival Index',
+                    data: arrIndexed,
+                    backgroundColor: 'rgba(34,211,238,0.6)',
+                    borderColor: '#22d3ee',
+                    borderWidth: 1, borderRadius: 3, order: 2
+                },
+                {
+                    label: 'Closure Index',
+                    data: clsIndexed,
+                    backgroundColor: 'rgba(52,211,153,0.6)',
+                    borderColor: '#34d399',
+                    borderWidth: 1, borderRadius: 3, order: 2
+                },
+                {
+                    label: 'Baseline (100)',
+                    data: Array(fc.length).fill(100),
+                    type: 'line', borderColor: 'rgba(148,163,184,0.5)',
+                    borderDash: [6, 4], borderWidth: 1, pointRadius: 0,
+                    fill: false, order: 1
+                }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { position: 'top', labels: { color: '#94a3b8', usePointStyle: true, padding: 16 } },
+                tooltip: {
+                    backgroundColor: '#1e293b', titleColor: '#f1f5f9', bodyColor: '#94a3b8',
+                    borderColor: '#334155', borderWidth: 1,
+                    callbacks: {
+                        label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}`
+                    }
+                }
+            },
+            scales: {
+                x: { grid: { color: 'rgba(51,65,85,0.3)' }, ticks: { color: '#64748b', maxRotation: 45 } },
+                y: {
+                    grid: { color: 'rgba(51,65,85,0.3)' }, ticks: { color: '#64748b' },
+                    title: { display: true, text: 'Index (100 = historical avg)', color: '#64748b' }
+                }
+            }
+        }
+    });
+
+    // Insight
+    const avgArrIdx = arrIndexed.reduce((a, b) => a + b, 0) / arrIndexed.length;
+    const avgClsIdx = clsIndexed.reduce((a, b) => a + b, 0) / clsIndexed.length;
+    const gap = avgArrIdx - avgClsIdx;
+    document.getElementById('forecastInsight').textContent = gap > 5
+        ? `Arrivals are projected at ${avgArrIdx.toFixed(0)} index vs closures at ${avgClsIdx.toFixed(0)}. The ${gap.toFixed(0)}-point gap means backlog will grow without throughput intervention.`
+        : `Arrivals and closures are roughly balanced. Backlog should remain stable.`;
+    document.getElementById('forecastInsight').className = gap > 5 ? 'insight-box warn' : 'insight-box info';
+}
+
+function renderBacklogChart() {
+    const fc = STATE.forecast;
+    const daily = STATE.rawDaily;
+    const startB = daily[daily.length - 1].B_t || 1;
+
+    const labels = fc.map(r => formatDate(r.date));
+    const backlogIdx = fc.map(r => idx(r.B_hat, startB));
+
+    destroyChart('backlogChart');
+    STATE.charts.backlogChart = new Chart(document.getElementById('backlogChart'), {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [{
+                label: 'Backlog Index (100 = current)',
+                data: backlogIdx,
+                borderColor: '#fbbf24', backgroundColor: 'rgba(251,191,36,0.1)',
+                borderWidth: 2.5, fill: true, tension: 0.3, pointRadius: 0, pointHoverRadius: 5
+            }, {
+                label: 'Current Level',
+                data: Array(fc.length).fill(100),
+                borderColor: 'rgba(148,163,184,0.4)', borderDash: [6, 4],
+                borderWidth: 1, pointRadius: 0, fill: false
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'top', labels: { color: '#94a3b8', usePointStyle: true, padding: 16 } },
+                tooltip: {
+                    backgroundColor: '#1e293b', titleColor: '#f1f5f9', bodyColor: '#94a3b8',
+                    borderColor: '#334155', borderWidth: 1,
+                    callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}` }
+                }
+            },
+            scales: {
+                x: { grid: { color: 'rgba(51,65,85,0.3)' }, ticks: { color: '#64748b', maxRotation: 45 } },
+                y: {
+                    grid: { color: 'rgba(51,65,85,0.3)' }, ticks: { color: '#64748b' },
+                    title: { display: true, text: 'Index (100 = today)', color: '#64748b' }
+                }
+            }
+        }
+    });
+}
+
+function renderVerticalCharts() {
+    const shares = STATE.verticalShares;
+    const labels = Object.keys(shares);
+    const pcts = Object.values(shares).map(v => v * 100);
+
+    // Pie chart
+    destroyChart('verticalPieChart');
+    STATE.charts.verticalPieChart = new Chart(document.getElementById('verticalPieChart'), {
+        type: 'doughnut',
+        data: {
+            labels,
+            datasets: [{
+                data: pcts,
+                backgroundColor: COLORS.verticals.slice(0, labels.length).map(c => c + 'cc'),
+                borderColor: '#1e293b', borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false, cutout: '55%',
+            plugins: {
+                legend: { position: 'right', labels: { color: '#94a3b8', usePointStyle: true, padding: 12, font: { size: 12 } } },
+                tooltip: {
+                    backgroundColor: '#1e293b', titleColor: '#f1f5f9', bodyColor: '#94a3b8',
+                    callbacks: { label: ctx => `${ctx.label}: ${ctx.parsed.toFixed(1)}%` }
+                }
+            }
+        }
+    });
+
+    // Bar chart â forecast share allocation
+    destroyChart('verticalBarChart');
+    STATE.charts.verticalBarChart = new Chart(document.getElementById('verticalBarChart'), {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{
+                label: 'Share %',
+                data: pcts,
+                backgroundColor: COLORS.verticals.slice(0, labels.length).map(c => c + '99'),
+                borderColor: COLORS.verticals.slice(0, labels.length),
+                borderWidth: 1, borderRadius: 4
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: '#1e293b', bodyColor: '#94a3b8',
+                    callbacks: { label: ctx => `${ctx.parsed.x.toFixed(1)}% of arrivals` }
+                }
+            },
+            scales: {
+                x: {
+                    grid: { color: 'rgba(51,65,85,0.3)' }, ticks: { color: '#64748b', callback: v => v + '%' },
+                    title: { display: true, text: 'Share of Total Arrivals', color: '#64748b' }
+                },
+                y: { grid: { display: false }, ticks: { color: '#94a3b8' } }
+            }
+        }
+    });
+}
+
+function renderSeasonalityCharts() {
+    const arrSeason = STATE.seasonality.arrivals;
+    const clsSeason = STATE.seasonality.closures;
+
+    // Arrival seasonality
+    destroyChart('seasonChart');
+    STATE.charts.seasonChart = new Chart(document.getElementById('seasonChart'), {
+        type: 'bar',
+        data: {
+            labels: DAY_NAMES,
+            datasets: [{
+                label: 'Arrival Index',
+                data: arrSeason,
+                backgroundColor: DAY_NAMES.map((_, i) => {
+                    const val = arrSeason[i];
+                    return val >= 120 ? 'rgba(251,113,133,0.7)' : val >= 90 ? 'rgba(34,211,238,0.6)' : 'rgba(100,116,139,0.5)';
+                }),
+                borderRadius: 4
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: '#1e293b', bodyColor: '#94a3b8',
+                    callbacks: { label: ctx => `Index: ${ctx.parsed.y.toFixed(1)} (100 = average)` }
+                }
+            },
+            scales: {
+                x: { grid: { display: false }, ticks: { color: '#94a3b8' } },
+                y: {
+                    grid: { color: 'rgba(51,65,85,0.3)' }, ticks: { color: '#64748b' },
+                    title: { display: true, text: 'Index (100 = daily avg)', color: '#64748b' }
+                }
+            }
+        }
+    });
+
+    // Season insight
+    const peakDay = DAY_NAMES[arrSeason.indexOf(Math.max(...arrSeason))];
+    const lowDay = DAY_NAMES[arrSeason.indexOf(Math.min(...arrSeason))];
+    document.getElementById('seasonInsight').textContent =
+        `Peak demand: ${peakDay}. Lowest: ${lowDay}. Plan staffing concentration accordingly.`;
+
+    // Closure efficiency by day
+    destroyChart('closureSeasonChart');
+    const efficiencyRatio = arrSeason.map((a, i) => a > 0 ? (clsSeason[i] / a) * 100 : 0);
+    STATE.charts.closureSeasonChart = new Chart(document.getElementById('closureSeasonChart'), {
+        type: 'bar',
+        data: {
+            labels: DAY_NAMES,
+            datasets: [{
+                label: 'Closure/Arrival Ratio',
+                data: efficiencyRatio,
+                backgroundColor: efficiencyRatio.map(v =>
+                    v >= 100 ? 'rgba(52,211,153,0.7)' : v >= 80 ? 'rgba(251,191,36,0.6)' : 'rgba(251,113,133,0.6)'
+                ),
+                borderRadius: 4
+            }, {
+                label: 'Parity (100%)',
+                data: Array(7).fill(100),
+                type: 'line', borderColor: 'rgba(148,163,184,0.4)', borderDash: [6, 4],
+                borderWidth: 1, pointRadius: 0, fill: false
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: '#1e293b', bodyColor: '#94a3b8',
+                    callbacks: { label: ctx => ctx.datasetIndex === 0 ? `Ratio: ${ctx.parsed.y.toFixed(1)}%` : 'Parity' }
+                }
+            },
+            scales: {
+                x: { grid: { display: false }, ticks: { color: '#94a3b8' } },
+                y: {
+                    grid: { color: 'rgba(51,65,85,0.3)' }, ticks: { color: '#64748b', callback: v => v + '%' },
+                    title: { display: true, text: 'Closure/Arrival %', color: '#64748b' }
+                }
+            }
+        }
+    });
+}
+
+function renderTable() {
+    const fc = STATE.forecast;
+    const daily = STATE.rawDaily;
+    const avgA = daily.reduce((s, r) => s + r.A_t, 0) / daily.length || 1;
+    const avgC = daily.reduce((s, r) => s + r.C_t, 0) / daily.length || 1;
+    const startB = daily[daily.length - 1].B_t || 1;
+
+    let html = '<table class="data-table"><thead><tr>';
+    html += '<th>Date</th><th>Day</th><th>Arrival Idx</th><th>Closure Idx</th><th>Esc Rate</th><th>Backlog Idx</th><th>Net Flow</th>';
+    html += '</tr></thead><tbody>';
+
+    fc.forEach(r => {
+        const arrI = idx(r.A_hat, avgA);
+        const clsI = idx(r.C_hat, avgC);
+        const bI = idx(r.B_hat, startB);
+        const netFlow = arrI - clsI;
+        const netColor = netFlow > 0 ? 'var(--rose)' : 'var(--emerald)';
+        html += `<tr>
+            <td>${formatDate(r.date)}</td>
+            <td>${DAY_NAMES[r.date.getDay()]}</td>
+            <td>${arrI.toFixed(1)}</td>
+            <td>${clsI.toFixed(1)}</td>
+            <td>${(STATE.escalationRate * 100).toFixed(2)}%</td>
+            <td>${bI.toFixed(1)}</td>
+            <td style="color:${netColor}">${netFlow > 0 ? '+' : ''}${netFlow.toFixed(1)}</td>
+        </tr>`;
+    });
+
+    html += '</tbody></table>';
+    document.getElementById('tableContainer').innerHTML = html;
+}
+
+function updateMeta() {
+    const alpha = document.getElementById('alpha').value;
+    const beta = document.getElementById('beta').value;
+    const gamma = document.getElementById('gamma').value;
+    document.getElementById('modelInfo').textContent =
+        `Model: Holt-Winters Additive (\u03b1=${alpha}, \u03b2=${beta}, \u03b3=${gamma}, m=7) \u2022 Escalation: Beta-Binomial (\u03bb=0.1)`;
+
+    const daily = STATE.rawDaily;
+    const fc = STATE.forecast;
+    document.getElementById('trainingInfo').textContent =
+        `Training: ${daily.length} days (${formatDate(daily[0].date)} \u2013 ${formatDate(daily[daily.length - 1].date)}) \u2022 Forecast: ${fc.length} days`;
+
+    document.getElementById('subtitle').textContent =
+        `${fc.length}-Day Projection \u2022 ${formatDate(fc[0].date)} \u2013 ${formatDate(fc[fc.length - 1].date)}`;
+}
+
+// ========================================================================
+// UTILITIES
+// ========================================================================
+function formatDate(d) {
+    const m = d.getMonth() + 1;
+    const day = d.getDate();
+    return `${m}/${day < 10 ? '0' + day : day}`;
+}
+
+function destroyChart(key) {
+    if (STATE.charts[key]) { STATE.charts[key].destroy(); STATE.charts[key] = null; }
+}
+
+function switchTab(tabName, btn) {
+    document.querySelectorAll('[id^="tab-"]').forEach(el => el.classList.add('hidden'));
+    document.getElementById('tab-' + tabName).classList.remove('hidden');
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+}
+
+// ========================================================================
+// DEMO DATA GENERATOR (for testing without real data)
+// ========================================================================
+function loadDemoData() {
+    const rows = [];
+    const start = new Date('2025-06-02');
+    let backlog = 800;
+    for (let i = 0; i < 174; i++) {
+        const d = new Date(start);
+        d.setDate(d.getDate() + i);
+        const dow = d.getDay();
+        const seasonFactor = [0.05, 1.1, 1.15, 1.25, 1.4, 1.35, 0.2][dow];
+        const trend = 1 + i * 0.002;
+        const arrivals = Math.round(Math.max(0, (14 * seasonFactor * trend) + (Math.random() - 0.5) * 8));
+        const closures = Math.round(Math.max(0, 10 + (Math.random() - 0.5) * 5));
+        const escalated = Math.round(Math.max(0, arrivals * 0.02 + (Math.random() - 0.5) * 1));
+        backlog = Math.max(0, backlog + arrivals - closures);
+        const verticals = ['Reseller','Reseller','Reseller','Reseller','Reseller','Reseller','Reseller','Fixed','Starshield','Aviation','Maritime','Civil Gov'];
+        rows.push({
+            date: d.toISOString().split('T')[0],
+            a_t: arrivals, c_t: closures, e_t: escalated, b_t: backlog,
+            vertical: verticals[Math.floor(Math.random() * verticals.length)]
+        });
+    }
+    return rows;
+}
+
+// Expose demo loader to console for testing
+window.loadDemo = function() { processData(loadDemoData()); };
+</script>
+</body>
+</html>
